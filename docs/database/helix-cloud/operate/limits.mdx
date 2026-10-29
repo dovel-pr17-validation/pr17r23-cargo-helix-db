@@ -1,0 +1,202 @@
+---
+title: "Limits"
+description: "Understand Helix Cloud request rate limits and database constraints"
+sidebarTitle: "Limits"
+pageType: "Reference"
+---
+
+<div className="flex flex-wrap gap-2"><Badge color="gray" size="sm">Reference</Badge></div>
+
+Current constraints and practical limits. These reflect the current implementation, not
+fundamental architectural boundaries.
+
+## Active-text mutation admission
+
+The engine checks each text document a write indexes before the write commits. When one
+document's final text exceeds a bound, the write fails with HTTP 400 and code
+`active_text_mutation_limit_exceeded`, and none of its graph changes commit. The
+diagnostic reports the measured resource, the document's usage and its allowance.
+
+Each document is checked on its own. The index worker later swaps an entity's indexed
+document for its newest one in a single publication, so each document may use at most
+half of that publication's row budget. Only the newest document is analyzed, so it gets
+the whole analysis budget:
+
+| Resource | Default allowance per document |
+| --- | ---: |
+| Text analysis (the text, plus about 280 bytes per token and 3 bytes per token byte) | 64 MiB |
+| Output key/value operations (one per unique term, plus 6) | 16,384 |
+| Output key/value bytes (term statistics, marker and manifest rows) | 2 MiB |
+| Input key/value bytes (the text plus the rows it reads) | 28 MiB |
+| Encoded manifest page for the document's tenant partition | 4 MiB |
+
+In practice a document holds up to about 16,000 unique terms, or fewer when terms or
+tenant values are long, and about 200,000 short tokens.
+
+Separately, the queued work one write stages for one index is capped at 8 MiB. That
+bounds the combined text of every document the write indexes there; a larger write fails
+with `index_operation_batch_too_large` and should be split.
+
+Index builds apply the same per-document allowances, text analysis included, to existing
+rows. A longer row blocks the build with `oversized_entity`. Shorten or delete the row,
+then retry the build.
+
+These are runtime policy limits, not storage-format maxima; embedded configurations
+can supply a different validated policy. Retrying the same write does not help, and
+there is no time-based `Retry-After`: shorten the document instead. See
+[Error handling](/database/helix-cloud/operate/error-handling) for the response
+contract. HTTP 429 rate limiting below is a separate mechanism.
+
+## Helix Cloud request rate limits
+
+Helix Cloud applies a distributed token bucket to `POST /v2/query`,
+`POST /v2/cypher` and `POST /v2/cypher/explain`. The bucket is scoped to the
+authenticated Cloud database, so reads and writes from every API key, application
+instance, and gateway replica draw from the same allowance.
+
+| Plan | Sustained rate | Burst capacity |
+| --- | ---: | ---: |
+| Idea | 5 requests per second | 10 requests |
+| Startup | 10 requests per second | 20 requests |
+| Growth | 20 requests per second | 40 requests |
+
+Database-specific overrides can change the sustained rate, burst capacity, and query attempt budget.
+The values assigned to your database take precedence over its plan limits. Each
+admitted query request costs one token from one shared bucket per Cloud database.
+
+### Token-bucket behavior
+
+- A full bucket can admit requests up to its burst capacity. Tokens then refill
+  continuously at the plan's sustained rate, up to that capacity. This is not a
+  fixed one-second window.
+- One incoming request consumes one token whether it is a read, write, or cache
+  warming request. Warming fanout and gateway retries do not consume additional
+  tokens.
+- Requests rejected during authentication, gateway header validation, or outer
+  request JSON decoding do not consume a token. Query AST and planner validation
+  happen after admission, so those later validation failures consume one token.
+- The bucket is shared across API keys and gateway replicas. Rotating keys or
+  distributing calls across connections does not create more capacity.
+- Burst capacity controls short-term admission, not the number of queries that
+  can execute concurrently. Bound client concurrency separately.
+
+### Rate-limit responses
+
+When no token is available, the gateway rejects the request before database
+execution:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Content-Type: application/json
+Retry-After: 1
+
+{"error":"rate_limited","msg":"rate limit exceeded"}
+```
+
+`Retry-After` is a whole number of seconds. Wait at least that long before
+retrying, and add jitter when many workers share the same database. The response
+does not currently include `RateLimit-*` or `X-RateLimit-*` limit, remaining, or
+reset headers.
+
+Current official SDK error objects expose the HTTP status, stable code, and
+diagnostic, but not response headers. Use direct HTTP or an application
+transport that retains headers when the exact `Retry-After` value is required;
+otherwise use a configured, bounded status/code-aware delay with jitter.
+
+If the gateway cannot make a safe distributed rate-limit decision, it fails
+closed before database execution:
+
+```http
+HTTP/1.1 503 Service Unavailable
+Content-Type: application/json
+
+{"error":"rate_limit_unavailable","msg":"tenant rate limit is unavailable"}
+```
+
+Retry `rate_limit_unavailable` with bounded exponential backoff and jitter. A
+`402` `tenant_disabled` response is an account-credit gate, and a `408`
+`query_timeout` response is an execution deadline; neither means the request
+bucket was exhausted.
+
+### Application guidance
+
+1. Coordinate admission across workers that target the same Cloud database.
+2. Honor `Retry-After` on `rate_limited` instead of retrying immediately.
+3. Use bounded exponential backoff with jitter for transient `503` responses.
+4. Bound in-flight concurrency as well as request rate to avoid local queues and
+   latency spikes.
+5. Apply a separate per-user or per-workspace limiter when multiple application
+   tenants share one Cloud database; the Helix bucket does not distinguish those
+   application tenants.
+
+## Data model
+
+| Limit                  | Value                                                                                          |
+| ---------------------- | ---------------------------------------------------------------------------------------------- |
+| Node and edge ID range | 64-bit unsigned integer (max 2^64 - 1); JSON responses encode lifecycle identifiers as decimal strings |
+| Property value types   | boolean, integer, float, string, bytes, typed primitive arrays, generic arrays, and objects    |
+| Nested structures      | Stored object/array values are supported. Dotted-path lookup such as `metadata.externalID` works in scan-time filters, expressions, projections, `values`, filtered `valueMap`, and fallback ordering. Arrays are opaque; there is no array-index path syntax. |
+| Reserved property keys | `$label` (used for label-based filtering and label-scoped secondary, vector, and text indexes) |
+
+## Vector indexes
+
+| Limit                    | Value                                                                                                                                    |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Scope                    | Node and edge properties                                                                                                                 |
+| Supported property types | Numeric array properties (`float32[]`, `float64[]`, `int64[]`) normalized to `float32` for indexing                                      |
+| Tenant partitioning      | Optional by configured tenant property name. Tenant-scoped searches require a tenant value. Unknown tenant partitions return no results. |
+| Dimension matching       | Vectors must exactly match the configured index dimension                                                                                |
+| Distance metrics         | cosine, euclidean, manhattan                                                                                                             |
+| Search type              | Approximate nearest neighbor (ANN)                                                                                                       |
+| Result count              | Whole-index vector search caps effective `k` at 800. [Prefiltered](/database/helix-db/query-guides/prefiltering#result-limits) vector search rejects when `min(k, unique candidates)` exceeds 800 or when the candidate stream exceeds 1,000,000 unique entities. |
+| Prefiltered search       | Final membership is the exact current traversal stream; ranking may still use approximate index structures                              |
+
+## Text indexes
+
+| Limit                    | Value                                                                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scope                    | Node and edge properties                                                                                                                                      |
+| Supported property types | Top-level `String` and `StringArray` properties. Nested object fields are not flattened for BM25.                                                            |
+| Unsupported values       | `null` and non-string values are rejected                                                                                                                     |
+| Analyzer config          | Preset analyzers: `standard`, `standard_stem_en`, `whitespace_lowercase`                                                                                      |
+| Term positions           | Optional                                                                                                                                                      |
+| Result count              | Effective `k` is capped at 800. [Prefiltered](/database/helix-db/query-guides/prefiltering#result-limits) text search returns at most `min(unique candidates, k, 800)` rows; more than 1,000,000 unique candidates is a query error. |
+| Tenant partitioning      | Optional. Tenant-partitioned text indexes currently require the partition property name to be `tenant_id`, and tenant-scoped searches require a tenant value. |
+
+## Secondary indexes
+
+| Limit            | Value                                                                                                      |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| Equality indexes | Supported on top-level node and edge properties. Nested dotted paths are scan-only in V1.                    |
+| Range indexes    | Supported on top-level numeric and string properties. Nested dotted paths are scan-only in V1.               |
+| Encoding         | Range indexes use lexicographic string encoding. Values must be encoded consistently for correct ordering. |
+
+## Queries
+
+| Limit             | Value                                |
+| ----------------- | ------------------------------------ |
+| Query model       | Dynamic queries                      |
+| Query language    | SDK DSLs or dynamic JSON AST         |
+| Transaction scope | One transaction per query invocation |
+| Query attempt budget | 30 seconds in the current default and plan configuration; database-specific overrides may change it |
+| Request envelope   | One `read` or `write` operation-tree batch with named entries and explicit returns |
+
+## Index lifecycle
+
+| Limit | Value |
+| --- | --- |
+| Activation | Asynchronous and atomic after scan, secondary-index catch-up, and validation |
+| Vector and text publication | Asynchronous. Each index retains at most 1,000,000,000 bytes or 250,000 pending entities of unpublished work (each change counts its encoded size plus 576 bytes), and one write stages at most 8 MiB for one index; see [index backpressure](/database/helix-db/query-guides/search-consistency#index-backpressure). A `strong` text search analyzes at most 512 MiB of unpublished text in its partition; see [searches behind unpublished changes](/database/helix-db/query-guides/search-consistency#searches-behind-unpublished-changes) |
+| Progress | Monotonic entity/byte/operation counters; no percentage or total-work estimate |
+| Controls | Poll all operations; retry blocked operations; abort eligible constructing builds |
+| Memory reporting | Cache and batch budgets do not constitute a hard process-RSS cap |
+
+## Embedded runtime
+
+| Limit | Value |
+| --- | --- |
+| Storage sources | In-memory, local disk, and S3-compatible object storage |
+| Handle modes | Writer or read-only |
+| Server options | Gateway headers and routing options are rejected |
+| Packaging | Install the SDK and its embedded runtime package |
+| Cache configuration | Fixed when the handle opens |

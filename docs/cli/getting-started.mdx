@@ -1,0 +1,70 @@
+---
+title: "Getting started with HelixDB CLI"
+description: "Install the CLI, run locally, or link a WorkOS-authenticated Cloud database"
+pageType: "Tutorial"
+---
+
+<div className="flex flex-wrap gap-2"><Badge color="green" size="sm">Tutorial</Badge></div>
+
+The `helix` CLI scaffolds projects, runs local HelixDB instances, sends queries, and
+manages Helix Cloud resources. Local commands need only Docker or Podman; Cloud
+commands also need a Helix Cloud account.
+
+## Local quickstart
+
+macOS and Linux:
+
+```bash
+curl -sSL "https://install.helix-db.com" | bash
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/HelixDB/helix-db/main/crates/cli/install.ps1 | iex
+```
+
+Then:
+
+```bash
+mkdir my-helix-app && cd my-helix-app
+helix init local
+helix start dev
+helix query dev --file examples/request.json
+helix stop dev
+```
+
+Local requests use the local auth-disabled runtime. The default storage is in-memory; use `--disk`
+or an S3 storage URI when persistence is required. `helix chef` can automate local scaffolding and
+agent setup without any Cloud login.
+
+When `helix chef` launches an installed agent, it uses this priority order:
+Claude Code → OpenAI Codex → OpenCode → Cursor Agent.
+
+## Cloud quickstart
+
+```bash
+helix auth login
+mkdir my-cloud-app && cd my-cloud-app
+helix init cloud
+helix query production --file request.json
+```
+
+`helix init cloud` picks your workspace, project, and database, using the only one of each or
+asking you to choose, and links them in `helix.toml`. Later Cloud commands in the directory, such
+as `helix database` or `helix logs`, need no IDs or flags.
+
+Cloud commands use only the rotating WorkOS session. Query execution goes through the backend broker
+and requires an independent `database.query.read` or `database.query.write` grant. The CLI does not
+need a gateway URL, application key, service credential, or sync step.
+
+When a command cannot choose a resource on its own, pass it by ID, slug, or name, for example
+`--project <project>` or `tenant:<id>`. Stable links live only in the current project's
+`helix.toml`. See [Cloud resource resolution](/cli/command-reference#cloud-resource-resolution).
+
+<CardGroup cols={2}>
+  <Card title="Local workflow" href="/cli/workflows/local">Run and query a local instance</Card>
+  <Card title="Cloud workflow" href="/cli/workflows/helix_cloud">Use the session-authenticated Cloud CLI</Card>
+  <Card title="Command reference" href="/cli/command-reference">See every retained command</Card>
+  <Card title="Troubleshooting" href="/cli/troubleshooting">Resolve common errors</Card>
+</CardGroup>

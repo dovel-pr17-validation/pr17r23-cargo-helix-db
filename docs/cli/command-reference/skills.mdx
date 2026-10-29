@@ -1,0 +1,74 @@
+---
+title: "helix skills"
+sidebarTitle: "skills"
+description: "Install, refresh, and list the Helix agent skills"
+pageType: "Reference"
+---
+
+<div className="flex flex-wrap gap-2"><Badge color="gray" size="sm">Reference</Badge></div>
+
+Install, refresh, and inspect the Helix agent skills — the query-authoring skills
+(`helix-query-typescript`, `helix-query-rust`, `helix-memory-system`, and friends) that
+coding agents like Claude Code use to write correct HelixDB queries. `helix init` and
+`helix chef` install these skills for you; `helix skills` is how you manage them afterwards.
+
+## Usage
+
+```bash
+helix skills <SUBCOMMAND> [--project]
+```
+
+## Subcommands
+
+| Subcommand | Description |
+| --- | --- |
+| `install` | Install the Helix agent skills (interactive). |
+| `update` | Refresh installed Helix skills to the latest version. |
+| `list` | List installed agent skills. |
+
+## Options
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| `--project` | Operate on the current project (`.<agent>/skills`) instead of globally. | Global (`~/.agents/skills`) |
+
+## Behavior
+
+- Skills are installed with the [`skills`](https://github.com/vercel-labs/skills) CLI under the hood (`npx skills add HelixDB/skills`), so this command requires **Node.js/npm** (`npx`) on your PATH.
+- Skills install **globally** by default (`~/.agents/skills`, shared across projects); `--project` works relative to the current directory.
+- `install` and `list` hand the terminal to the `skills` CLI, so they refuse `--json`. `update --json` prints `{"updated":true}`.
+
+<Note>
+`helix skills update` re-fetches the skills from source and **overwrites** their files,
+so any local edits to the installed skills are discarded.
+</Note>
+
+### Update notifications
+
+When skills are installed, the CLI checks once every 24 hours (the same cadence and
+`HELIX_NO_UPDATE_CHECK` opt-out as the CLI version check) whether the Helix skills are out
+of date, and prints a one-line notice pointing you at `helix skills update`. It is
+**notify-only** — it never rewrites skill files on a routine command. Running
+[`helix update`](/cli/command-reference/update) also refreshes installed skills.
+
+## Examples
+
+```bash
+# Install the Helix skills globally
+helix skills install
+
+# Refresh installed skills to the latest version
+helix skills update
+
+# Install into the current project instead of globally
+helix skills install --project
+
+# List installed skills
+helix skills list
+```
+
+## Related
+
+- [`helix update`](/cli/command-reference/update) — update the CLI and refresh skills together.
+- [`helix init`](/cli/command-reference/init) — installs skills when creating a project.
+- [`helix chef`](/cli/command-reference/chef) — installs skills and launches a coding agent.

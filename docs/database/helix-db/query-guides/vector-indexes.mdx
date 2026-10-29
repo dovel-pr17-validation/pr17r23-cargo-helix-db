@@ -1,0 +1,262 @@
+---
+title: "Vector indexes"
+description: "Create vector indexes and run nearest-neighbor search"
+pageType: "Guide"
+---
+
+<div className="flex flex-wrap gap-2"><Badge color="blue" size="sm">Guide</Badge></div>
+
+A vector index ranks node or edge embeddings by distance to a query vector. Use it for
+semantic search, recommendations, and retrieval over any label that stores an
+embedding as a top-level numeric array property.
+
+Every definition declares a non-zero dimension and one distance metric: cosine,
+Euclidean, or Manhattan. Stored embeddings and every query vector must have exactly
+the declared dimension.
+
+For background, see [What is vector search?](/learn/vector-search/what-is-vector-search)
+and [vector distance metrics](/learn/vector-search/vector-distance-metrics).
+
+Vector search and vector index management are native-only: Cypher has no syntax for
+them. The [Cypher guide](/database/helix-db/query-guides/cypher#what-is-not-supported)
+lists what Cypher covers.
+
+## Create a vector index
+
+<CodeGroup>
+
+```rust Rust
+write_batch()
+    .var_as(
+        "index",
+        g().create_vector_index_nodes(
+            "Doc",
+            "embedding",
+            std::num::NonZeroUsize::new(3).expect("non-zero dimension"),
+            VectorDistanceMetric::Cosine,
+            None::<&str>,
+        ),
+    )
+    .returning(["index"]);
+```
+
+```ts TypeScript
+writeBatch()
+  .varAs(
+    "index",
+    g().createVectorIndexNodes(
+      "Doc",
+      "embedding",
+      3,
+      VectorDistanceMetric.Cosine,
+      null,
+    ),
+  )
+  .returning(["index"]);
+```
+
+```go Go
+helix.WriteQuery("create_doc_vector_index").
+	VarAs(
+		"index",
+		helix.G().CreateVectorIndexNodes(
+			"Doc",
+			"embedding",
+			3,
+			helix.VectorDistanceCosine,
+		),
+	).
+	Returning("index")
+```
+
+```python Python
+(
+    write_batch()
+    .var_as(
+        "index",
+        g().create_vector_index_nodes(
+            "Doc",
+            "embedding",
+            3,
+            VectorDistanceMetric.COSINE,
+        ),
+    )
+    .returning(["index"])
+)
+```
+
+```json JSON
+{
+  "request_type": "write",
+  "query_name": "create_doc_vector_index",
+  "query": {
+    "write": {
+      "entries": [{
+        "query": {
+          "name": "index",
+          "root": {
+            "create_index": {
+              "spec": {
+                "node_vector": {
+                  "label": "Doc",
+                  "property": "embedding",
+                  "dimension": 3,
+                  "metric": "cosine"
+                }
+              },
+              "if_not_exists": true
+            }
+          }
+        }
+      }],
+      "returns": ["index"]
+    }
+  }
+}
+```
+
+</CodeGroup>
+
+Pass a tenant property as the final argument to partition the index by tenant. See
+[tenant-partitioned search indexes](/database/helix-cloud/operate/multi-tenancy#tenant-partitioned-search-indexes).
+
+Creation returns a receipt before the backfill over existing data finishes. The index
+becomes queryable only after validation and atomic activation.
+
+## Search an index
+
+Search the whole index when every record of the label is a valid result. This request
+returns the ten `Doc` nodes closest to the query vector:
+
+<CodeGroup>
+
+```rust Rust
+read_batch()
+    .var_as(
+        "hits",
+        g().vector_search_nodes("Doc", "embedding", vec![0.1, 0.8, 0.2], 10, None)
+            .value_map(Some(vec!["$id", "title", "$distance"])),
+    )
+    .returning(["hits"]);
+```
+
+```ts TypeScript
+readBatch()
+  .varAs(
+    "hits",
+    g()
+      .vectorSearchNodes("Doc", "embedding", [0.1, 0.8, 0.2], 10, null)
+      .valueMap(["$id", "title", "$distance"]),
+  )
+  .returning(["hits"]);
+```
+
+```go Go
+helix.ReadQuery("similar_docs").
+	VarAs(
+		"hits",
+		helix.G().
+			VectorSearchNodes("Doc", "embedding", []float32{0.1, 0.8, 0.2}, 10).
+			ValueMap("$id", "title", "$distance"),
+	).
+	Returning("hits")
+```
+
+```python Python
+(
+    read_batch()
+    .var_as(
+        "hits",
+        g()
+        .vector_search_nodes("Doc", "embedding", [0.1, 0.8, 0.2], 10)
+        .value_map(["$id", "title", "$distance"]),
+    )
+    .returning(["hits"])
+)
+```
+
+```json JSON
+{
+  "request_type": "read",
+  "query_name": "similar_docs",
+  "query": {
+    "read": {
+      "entries": [{
+        "query": {
+          "name": "hits",
+          "root": {
+            "value_map": {
+              "input": {
+                "vector_search_nodes": {
+                  "label": "Doc",
+                  "property": "embedding",
+                  "query_vector": { "value": { "f32_array": [0.1, 0.8, 0.2] } },
+                  "k": { "literal": 10 }
+                }
+              },
+              "properties": ["$id", "title", "$distance"]
+            }
+          }
+        }
+      }],
+      "returns": ["hits"]
+    }
+  }
+}
+```
+
+</CodeGroup>
+
+Hits arrive closest first, ordered by `$distance` and then by ID. Use
+`vectorSearchEdges` / `vector_search_edges` (`VectorSearchEdges` in Go) to search an
+edge index. For a tenant-partitioned index, pass the tenant value as the final
+argument.
+
+`$distance` exists only on the hit stream. Project it before traversing away from a
+hit if the response needs it.
+
+## Prefilter with a traversal
+
+To rank only the nodes or edges a traversal reaches, such as documents a user may
+access, search within the traversal instead of the whole index. See
+[Prefiltered search](/database/helix-db/query-guides/prefiltering#vector-prefiltering).
+
+## Search consistency
+
+By default, searches include committed writes that the index worker has not published
+into the index yet. A read request can opt into `eventual` search, which bounds that
+work per search. See [Search consistency](/database/helix-db/query-guides/search-consistency)
+for both modes, searches in write batches, and `index_backpressure`.
+
+## Result limits
+
+The server caps the effective result count of a whole-index search at 800. A narrower
+bound from the surrounding plan can lower it. Prefiltered searches have their own
+[limits](/database/helix-db/query-guides/prefiltering#result-limits).
+
+## Operational notes
+
+- Creation returns before the backfill necessarily finishes.
+- Writes made while an index builds are queued and published after it activates;
+  strong searches include them as soon as the index is active. Until then they count
+  toward [index backpressure](/database/helix-db/query-guides/search-consistency#index-backpressure).
+- Malformed source vectors can block the operation.
+- A new generation remains hidden until validation and activation succeed.
+- Dropping an index is also a durable lifecycle operation.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Project search results" icon="table-columns" href="/database/helix-db/query-guides/projections">
+    Preserve ranked hit metadata before continuing a traversal.
+  </Card>
+  <Card title="Text indexes" icon="align-left" href="/database/helix-db/query-guides/text-indexes">
+    Rank string properties with BM25 keyword search.
+  </Card>
+  <Card title="Troubleshoot index operations" icon="wrench" href="/database/helix-db/query-guides/troubleshooting#index-operation-is-blocked">
+    Resolve blocked builds and lifecycle errors.
+  </Card>
+  <Card title="Limits" icon="gauge" href="/database/helix-cloud/operate/limits#vector-indexes">
+    Review supported property types and search limits.
+  </Card>
+</CardGroup>

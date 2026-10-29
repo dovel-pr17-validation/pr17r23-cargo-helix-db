@@ -1,0 +1,421 @@
+---
+title: "Shape query results"
+description: "Return properties, computed values, aggregates, and correlated binding rows"
+sidebarTitle: "Projections"
+pageType: "Guide"
+---
+
+<div className="flex flex-wrap gap-2"><Badge color="blue" size="sm">Guide</Badge></div>
+
+Projection operations turn a traversal stream into the response shape your application
+needs. They are terminal: a projection finishes that traversal entry.
+
+## Choose a projection
+
+| Intent | Operation |
+| --- | --- |
+| Selected fields | `valueMap` / `value_map` |
+| Renamed or computed fields | `project` |
+| Correlated row fields | `projectBindings` / `project_bindings` |
+| Scalar values | `id`, `label`, `values` |
+| Aggregates | `count`, `sum`, `min`, `max`, `mean`, `groupCount` |
+
+Virtual fields include `$id`, `$label`, `$from`, `$to`, `$distance`, and `$score`
+where the preceding operation provides them.
+
+## Rename fields
+
+<CodeGroup>
+
+```rust Rust
+g().n_with_label("User").project(vec![
+    PropertyProjection::renamed("$id", "user_id"),
+    PropertyProjection::new("name"),
+])
+```
+
+```ts TypeScript
+g().nWithLabel("User").project([
+  PropertyProjection.renamed("$id", "user_id"),
+  PropertyProjection.new("name"),
+])
+```
+
+```go Go
+helix.G().NWithLabel("User").Project(
+	helix.ProjectPropAs("$id", "user_id"),
+	helix.ProjectPropAs("name", "name"),
+)
+```
+
+```python Python
+g().n_with_label("User").project([
+    PropertyProjection.renamed("$id", "user_id"),
+    PropertyProjection.new("name"),
+])
+```
+
+```json JSON
+{
+  "request_type": "read",
+  "query_name": "project_users",
+  "query": {
+    "read": {
+      "entries": [{
+        "query": {
+          "name": "users",
+          "root": {
+            "project": {
+              "input": {
+                "nodes_where": {
+                  "predicate": {
+                    "eq": {
+                      "left": { "property": "$label" },
+                      "right": { "constant": { "string": "User" } }
+                    }
+                  }
+                }
+              },
+              "projections": [
+                {
+                  "property": {
+                    "source": "$id",
+                    "alias": "user_id"
+                  }
+                },
+                {
+                  "property": {
+                    "source": "name",
+                    "alias": "name"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }],
+      "returns": ["users"]
+    }
+  }
+}
+```
+
+```cypher Cypher
+MATCH (u:User)
+RETURN id(u) AS user_id, u.name AS name
+```
+
+</CodeGroup>
+
+## Project correlated bindings
+
+`projectBindings` / `project_bindings` emits one row per traversal result, reading
+values from names captured earlier with [`bind`](/database/helix-db/query-guides/traversals#preserve-correlated-values).
+`projectDistinctBindings` / `project_distinct_bindings` also removes duplicate
+projected tuples.
+
+When alternative branches bind different names, a row carries only the bindings its
+own path set. Use `coalesce` to take the first binding that is present. This request
+maps each service to a workload ID, whichever branch found it:
+
+<CodeGroup>
+
+```rust Rust [expandable]
+read_batch()
+    .var_as(
+        "workloads",
+        g().n_with_label("Service")
+            .bind("service")
+            .out(Some("ROUTES_TO"))
+            .bind("pod")
+            .optional(sub().in_(Some("CREATES")).bind("deployment"))
+            .union(vec![
+                sub().in_(Some("MANAGES")).bind("owner"),
+                sub().out(Some("ROUTES_TO")).bind("workload"),
+            ])
+            .project_distinct_bindings(vec![
+                BindingProjection::binding("service", "$id", "service_id"),
+                BindingProjection::coalesce(
+                    vec![
+                        BindingValueRef::binding("deployment", "$id"),
+                        BindingValueRef::binding("owner", "$id"),
+                        BindingValueRef::binding("workload", "$id"),
+                    ],
+                    "workload_id",
+                ),
+            ]),
+    )
+    .returning(["workloads"]);
+```
+
+```ts TypeScript [expandable]
+readBatch()
+  .varAs(
+    "workloads",
+    g()
+      .nWithLabel("Service")
+      .bind("service")
+      .out("ROUTES_TO")
+      .bind("pod")
+      .optional(sub().in("CREATES").bind("deployment"))
+      .union([sub().in("MANAGES").bind("owner"), sub().out("ROUTES_TO").bind("workload")])
+      .projectDistinctBindings([
+        BindingProjection.binding("service", "$id", "service_id"),
+        BindingProjection.coalesce(
+          [
+            BindingProjection.bindingRef("deployment", "$id"),
+            BindingProjection.bindingRef("owner", "$id"),
+            BindingProjection.bindingRef("workload", "$id"),
+          ],
+          "workload_id",
+        ),
+      ]),
+  )
+  .returning(["workloads"]);
+```
+
+```go Go [expandable]
+helix.ReadQuery("service_workloads").
+	VarAs(
+		"workloads",
+		helix.G().
+			NWithLabel("Service").
+			Bind("service").
+			Out("ROUTES_TO").
+			Bind("pod").
+			Optional(helix.Sub().In("CREATES").Bind("deployment")).
+			Union(
+				helix.Sub().In("MANAGES").Bind("owner"),
+				helix.Sub().Out("ROUTES_TO").Bind("workload"),
+			).
+			ProjectDistinctBindings(
+				helix.ProjectNamedBinding("service", "$id", "service_id"),
+				helix.ProjectBindingCoalesce([]helix.BindingValueRef{
+					helix.NamedBindingValue("deployment", "$id"),
+					helix.NamedBindingValue("owner", "$id"),
+					helix.NamedBindingValue("workload", "$id"),
+				}, "workload_id"),
+			),
+	).
+	Returning("workloads")
+```
+
+```python Python [expandable]
+(
+    read_batch()
+    .var_as(
+        "workloads",
+        g()
+        .n_with_label("Service")
+        .bind("service")
+        .out("ROUTES_TO")
+        .bind("pod")
+        .optional(sub().in_("CREATES").bind("deployment"))
+        .union(
+            [
+                sub().in_("MANAGES").bind("owner"),
+                sub().out("ROUTES_TO").bind("workload"),
+            ]
+        )
+        .project_distinct_bindings(
+            [
+                BindingProjection.binding("service", "$id", "service_id"),
+                BindingProjection.coalesce(
+                    [
+                        BindingProjection.binding_ref("deployment", "$id"),
+                        BindingProjection.binding_ref("owner", "$id"),
+                        BindingProjection.binding_ref("workload", "$id"),
+                    ],
+                    "workload_id",
+                ),
+            ]
+        ),
+    )
+    .returning(["workloads"])
+)
+```
+
+```json JSON [expandable]
+{
+  "request_type": "read",
+  "query_name": "service_workloads",
+  "query": {
+    "read": {
+      "entries": [
+        {
+          "query": {
+            "name": "workloads",
+            "root": {
+              "project_bindings": {
+                "input": {
+                  "union": {
+                    "input": {
+                      "optional": {
+                        "input": {
+                          "bind": {
+                            "input": {
+                              "out": {
+                                "input": {
+                                  "bind": {
+                                    "input": {
+                                      "nodes_where": {
+                                        "predicate": {
+                                          "eq": {
+                                            "left": {
+                                              "property": "$label"
+                                            },
+                                            "right": {
+                                              "constant": {
+                                                "string": "Service"
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "name": "service"
+                                  }
+                                },
+                                "label": "ROUTES_TO"
+                              }
+                            },
+                            "name": "pod"
+                          }
+                        },
+                        "traversal": {
+                          "root": {
+                            "bind": {
+                              "input": {
+                                "in": {
+                                  "input": "context",
+                                  "label": "CREATES"
+                                }
+                              },
+                              "name": "deployment"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "traversals": [
+                      {
+                        "root": {
+                          "bind": {
+                            "input": {
+                              "in": {
+                                "input": "context",
+                                "label": "MANAGES"
+                              }
+                            },
+                            "name": "owner"
+                          }
+                        }
+                      },
+                      {
+                        "root": {
+                          "bind": {
+                            "input": {
+                              "out": {
+                                "input": "context",
+                                "label": "ROUTES_TO"
+                              }
+                            },
+                            "name": "workload"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "projections": [
+                  {
+                    "property": {
+                      "target": {
+                        "binding": "service"
+                      },
+                      "source": "$id",
+                      "alias": "service_id"
+                    }
+                  },
+                  {
+                    "coalesce": {
+                      "refs": [
+                        {
+                          "target": {
+                            "binding": "deployment"
+                          },
+                          "source": "$id"
+                        },
+                        {
+                          "target": {
+                            "binding": "owner"
+                          },
+                          "source": "$id"
+                        },
+                        {
+                          "target": {
+                            "binding": "workload"
+                          },
+                          "source": "$id"
+                        }
+                      ],
+                      "alias": "workload_id"
+                    }
+                  }
+                ],
+                "distinct": true
+              }
+            }
+          }
+        }
+      ],
+      "returns": [
+        "workloads"
+      ]
+    }
+  }
+}
+```
+
+```cypher Cypher
+MATCH (service:Service)-[:ROUTES_TO]->(pod)
+OPTIONAL MATCH (deployment)-[:CREATES]->(pod)
+WITH service, deployment, coalesce(deployment, pod) AS current
+UNWIND ['MANAGES', 'ROUTES_TO'] AS branch
+OPTIONAL MATCH (owner)-[:MANAGES]->(current) WHERE branch = 'MANAGES'
+OPTIONAL MATCH (current)-[:ROUTES_TO]->(workload) WHERE branch = 'ROUTES_TO'
+WITH service, deployment, owner, workload
+WHERE owner IS NOT NULL OR workload IS NOT NULL
+RETURN DISTINCT id(service) AS service_id, id(coalesce(deployment, owner, workload)) AS workload_id
+```
+
+</CodeGroup>
+
+Cypher has no `UNION` (see the
+[Cypher guide](/database/helix-db/query-guides/cypher#what-is-not-supported)), so the
+Cypher tab gives each `union` branch its own row through `UNWIND`, runs that branch as
+an `OPTIONAL MATCH`, and drops rows where the branch found nothing.
+
+## Aggregate
+
+Append `count()` to a filtered traversal and return that named entry; aggregation runs
+inside the transaction instead of materializing every row in the client.
+
+## Keep responses small
+
+- Project only fields the caller uses.
+- Project `$distance` before traversing away from a search hit if the score is needed
+  later.
+- Use aggregates in the engine instead of returning full rows for client-side counting.
+- Add `distinct` only when duplicate elimination is semantically required.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Bindings and branches" icon="code-branch" href="/database/helix-db/query-guides/advanced">
+    Preserve row-local values across optional and union operations.
+  </Card>
+  <Card title="Vector search" icon="magnifying-glass" href="/database/helix-db/query-guides/vector-indexes">
+    Create an index, rank vector hits, and preserve distance metadata.
+  </Card>
+</CardGroup>

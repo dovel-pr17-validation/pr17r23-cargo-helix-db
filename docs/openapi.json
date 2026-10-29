@@ -1,0 +1,1952 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "HelixDB HTTP API",
+    "version": "2.0.0",
+    "summary": "Execute operation-tree and Cypher queries against HelixDB",
+    "description": "The v2 operation-tree query contract and the Cypher execution and read-only planning contract are available on local servers and Helix Cloud gateways.",
+    "termsOfService": "https://www.helix-db.com/terms",
+    "contact": {
+      "name": "HelixDB",
+      "url": "https://www.helix-db.com/developers"
+    },
+    "license": {
+      "name": "Apache-2.0",
+      "identifier": "Apache-2.0"
+    }
+  },
+  "externalDocs": {
+    "description": "HelixDB HTTP API documentation",
+    "url": "https://docs.helix-db.com/database/helix-db/query-guides/http-api"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:6969",
+      "description": "Default local HelixDB server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Queries",
+      "description": "Execute serialized HelixDB operation trees."
+    },
+    {
+      "name": "Cypher",
+      "description": "Execute or explain the supported Cypher profile on a local HelixDB server or a Helix Cloud gateway."
+    },
+    {
+      "name": "Health",
+      "description": "Inspect process liveness and database readiness."
+    }
+  ],
+  "paths": {
+    "/v2/query": {
+      "post": {
+        "operationId": "executeQuery",
+        "summary": "Execute a HelixDB query",
+        "description": "Executes one read or write batch. request_type must match the closed read or write variant under query. Local servers accept request bodies up to 16 MiB. Helix Cloud gateways accept request bodies up to 2 MiB.",
+        "x-helix-request-body-limits": {
+          "localBytes": 16777216,
+          "helixCloudBytes": 2097152
+        },
+        "servers": [
+          {
+            "url": "http://localhost:6969",
+            "description": "Default local HelixDB server"
+          },
+          {
+            "url": "https://{gatewayHost}",
+            "description": "Helix Cloud query gateway from the database connection details",
+            "variables": {
+              "gatewayHost": {
+                "default": "cluster.helix-db.com",
+                "description": "Placeholder only. Replace it with the managed gateway hostname shown in the Helix Cloud dashboard."
+              }
+            }
+          }
+        ],
+        "tags": [
+          "Queries"
+        ],
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DatabaseId"
+          },
+          {
+            "$ref": "#/components/parameters/WarmOnly"
+          },
+          {
+            "$ref": "#/components/parameters/RequireWriter"
+          },
+          {
+            "$ref": "#/components/parameters/AwaitDurable"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Maximum encoded body size: 16 MiB on a local HelixDB server and 2 MiB on a Helix Cloud gateway.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueryRequest"
+              },
+              "examples": {
+                "read": {
+                  "summary": "Count User nodes",
+                  "value": {
+                    "request_type": "read",
+                    "query_name": "node_count",
+                    "query": {
+                      "read": {
+                        "entries": [
+                          {
+                            "query": {
+                              "name": "node_count",
+                              "root": {
+                                "count": {
+                                  "input": {
+                                    "nodes_where": {
+                                      "predicate": {
+                                        "eq": {
+                                          "left": {
+                                            "property": "$label"
+                                          },
+                                          "right": {
+                                            "constant": {
+                                              "string": "User"
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "returns": [
+                          "node_count"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "write": {
+                  "summary": "Create one User node",
+                  "value": {
+                    "request_type": "write",
+                    "query_name": "create_user",
+                    "query": {
+                      "write": {
+                        "entries": [
+                          {
+                            "query": {
+                              "name": "user",
+                              "root": {
+                                "add_n": {
+                                  "label": "User",
+                                  "properties": [
+                                    [
+                                      "name",
+                                      {
+                                        "value": {
+                                          "string": "Alice"
+                                        }
+                                      }
+                                    ]
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "returns": [
+                          "user"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Query executed successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Helix Cloud completed a cache-warming read and intentionally omitted the response body."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "408": {
+            "$ref": "#/components/responses/RequestTimeout"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Get process health",
+        "description": "Reports process liveness and the current database and index-runtime state. Liveness returns 200 even when ready is false.",
+        "tags": [
+          "Health"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The server process is alive.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "getReadiness",
+        "summary": "Get database readiness",
+        "description": "Returns 200 only when the configured database handle and index runtime are ready to serve queries.",
+        "tags": [
+          "Health"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The database is ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The process is alive, but the database is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/diagnostics": {
+      "get": {
+        "operationId": "getDiagnostics",
+        "summary": "Diagnose the server's setup",
+        "description": "Runs read-only checks of how this server is set up and returns each verdict: storage durability, the S3 bucket's region and round-trip time, the disk cache's device, free space and startup warm, memory headroom, vector and text index publication, and the missing indexes and unbounded scans of recent queries. Checks that do not apply to the configured storage are left out. Nothing is changed; the only outbound requests are HEADs of a key that does not exist in the bucket, an unsigned HEAD of the bucket for its region, and the EC2 or ECS metadata endpoint, each bounded by a short timeout. `helix doctor` renders this report.",
+        "tags": [
+          "Health"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Every applicable check, in report order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticsReport"
+                },
+                "example": {
+                  "uptime_secs": 3600,
+                  "checks": [
+                    {
+                      "id": "storage.s3_region",
+                      "category": "storage",
+                      "status": "pass",
+                      "summary": "S3 bucket is in this server's region",
+                      "detail": "Bucket helix-data and this server are both in us-east-2."
+                    },
+                    {
+                      "id": "cache.device",
+                      "category": "cache",
+                      "status": "warn",
+                      "summary": "The disk cache is on network block storage",
+                      "detail": "/var/cache/helix is on nvme0n1 (Amazon Elastic Block Store). Each cache miss pays network-disk latency and draws on the volume's IOPS limit; local NVMe answers several times faster.",
+                      "fix": "Run on an instance with local NVMe (for example the i4i, i8g, m7gd or c7gd families) and mount it at /var/cache/helix, or point HELIX_DISK_CACHE_DIR at it."
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/cypher": {
+      "post": {
+        "operationId": "executeCypher",
+        "summary": "Execute a Cypher statement",
+        "description": "Executes the supported Cypher read/CRUD profile. The server derives read/write effects from the statement; Helix Cloud routes reads to readers and writes to the elected writer. Modifying statements execute atomically in one write transaction. X-Helix-Warm is valid only for reads; X-Helix-Await-Durable:true is valid only for writes. Local servers accept request bodies up to 16 MiB. Helix Cloud gateways accept request bodies up to 2 MiB. Local servers apply a 30-second default deadline and Helix Cloud applies the database's query time limit. The response limit is 16 MiB, and resource exhaustion returns an error instead of truncation.",
+        "tags": [
+          "Cypher"
+        ],
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-helix-request-body-limits": {
+          "localBytes": 16777216,
+          "helixCloudBytes": 2097152
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DatabaseId"
+          },
+          {
+            "$ref": "#/components/parameters/WarmOnly"
+          },
+          {
+            "$ref": "#/components/parameters/RequireWriter"
+          },
+          {
+            "$ref": "#/components/parameters/AwaitDurable"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CypherRequest"
+              },
+              "examples": {
+                "read": {
+                  "summary": "Find people by a parameter",
+                  "value": {
+                    "query": "MATCH (n:Person) WHERE n.age >= $age RETURN n.name AS name",
+                    "parameters": {
+                      "age": 30
+                    },
+                    "query_name": "adults"
+                  }
+                },
+                "write": {
+                  "summary": "Create a labeled node",
+                  "value": {
+                    "query": "CREATE (n:Person {name:$name}) RETURN n",
+                    "parameters": {
+                      "name": "Ada"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Statement executed successfully, including writes without RETURN.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Helix Cloud completed a cache-warming read and intentionally omitted the response body."
+          },
+          "400": {
+            "description": "Malformed or oversized body, invalid request options, a missing or disallowed Helix Cloud database header, or a classified Cypher compile/runtime error. The local 16 MiB body limit returns invalid_request_body with this status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The Helix Cloud API key is invalid. Gateway errors use the native {error,msg} envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Helix Cloud query processing is disabled because the tenant has exhausted its credit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Helix Cloud API key cannot run this statement; a read-only key can read and explain but not write.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "The Helix Cloud query exceeded its wall-clock limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Native storage transaction conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The Helix Cloud gateway rejected a request body larger than 2 MiB before parsing it, with payload_too_large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Cypher resource limit exceeded (inspect details.detail), Helix Cloud rate limit exceeded, or index_backpressure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal planner, storage, execution-control, or serialization failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Writer required, server access mode unavailable, or uncertain write commit. A local uncertain outcome carries retryable:false; Helix Cloud reports one as WRITE_OUTCOME_UNKNOWN with retryable:false, like native queries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          }
+        },
+        "servers": [
+          {
+            "url": "http://localhost:6969",
+            "description": "Default local HelixDB server"
+          },
+          {
+            "url": "https://{gatewayHost}",
+            "description": "Helix Cloud query gateway from the database connection details",
+            "variables": {
+              "gatewayHost": {
+                "default": "cluster.helix-db.com",
+                "description": "Placeholder only. Replace it with the managed gateway hostname shown in the Helix Cloud dashboard."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "/v2/cypher/explain": {
+      "post": {
+        "operationId": "explainCypher",
+        "summary": "Explain a Cypher statement",
+        "description": "Parses, binds, and plans one statement against the current catalog without executing it. Uses read request options even for a modifying statement, so Helix Cloud routes it as a read and a read-only key may explain writes. X-Helix-Await-Durable:true is invalid. Local servers accept request bodies up to 16 MiB. Helix Cloud gateways accept request bodies up to 2 MiB. Local servers apply a 30-second default deadline and Helix Cloud applies the database's query time limit. The response limit is 16 MiB, and resource exhaustion returns an error instead of truncation.",
+        "tags": [
+          "Cypher"
+        ],
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-helix-request-body-limits": {
+          "localBytes": 16777216,
+          "helixCloudBytes": 2097152
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DatabaseId"
+          },
+          {
+            "$ref": "#/components/parameters/WarmOnly"
+          },
+          {
+            "$ref": "#/components/parameters/RequireWriter"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CypherRequest"
+              },
+              "examples": {
+                "read": {
+                  "summary": "Find people by a parameter",
+                  "value": {
+                    "query": "MATCH (n:Person) WHERE n.age >= $age RETURN n.name AS name",
+                    "parameters": {
+                      "age": 30
+                    },
+                    "query_name": "adults"
+                  }
+                },
+                "write": {
+                  "summary": "Create a labeled node (plan only)",
+                  "value": {
+                    "query": "CREATE (n:Person {name:$name}) RETURN n",
+                    "parameters": {
+                      "name": "Ada"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Statement planned without execution.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherExplanation"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Helix Cloud completed a cache-warming read and intentionally omitted the response body."
+          },
+          "400": {
+            "description": "Malformed or oversized body, invalid request options, a missing or disallowed Helix Cloud database header, or a classified Cypher compile/runtime error. The local 16 MiB body limit returns invalid_request_body with this status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The Helix Cloud API key is invalid. Gateway errors use the native {error,msg} envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Helix Cloud query processing is disabled because the tenant has exhausted its credit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Helix Cloud API key cannot run this statement; a read-only key can read and explain but not write.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "The Helix Cloud query exceeded its wall-clock limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The Helix Cloud gateway rejected a request body larger than 2 MiB before parsing it, with payload_too_large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Cypher resource limit exceeded (inspect details.detail), Helix Cloud rate limit exceeded, or index_backpressure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal planner, storage, execution-control, or serialization failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A request option requires a writer but the server is read-only, or no ready Helix Cloud database is available.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CypherError"
+                }
+              }
+            }
+          }
+        },
+        "servers": [
+          {
+            "url": "http://localhost:6969",
+            "description": "Default local HelixDB server"
+          },
+          {
+            "url": "https://{gatewayHost}",
+            "description": "Helix Cloud query gateway from the database connection details",
+            "variables": {
+              "gatewayHost": {
+                "default": "cluster.helix-db.com",
+                "description": "Placeholder only. Replace it with the managed gateway hostname shown in the Helix Cloud dashboard."
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Helix Cloud cluster API key. Local servers do not require this credential by default."
+      }
+    },
+    "parameters": {
+      "DatabaseId": {
+        "name": "X-Helix-Database-Id",
+        "in": "header",
+        "required": false,
+        "description": "Database identifier shown in Helix Cloud connection details. Required by the GA shared gateway, not needed by a standalone local server, and not allowed by a database-specific cluster-mode gateway. The legacy X-Helix-Tenant-Id alias is also accepted in GA mode.",
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "WarmOnly": {
+        "name": "X-Helix-Warm",
+        "in": "header",
+        "required": false,
+        "description": "Warm read execution state. Valid only for read requests.",
+        "schema": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "RequireWriter": {
+        "name": "X-Helix-Require-Writer",
+        "in": "header",
+        "required": false,
+        "description": "Reject the request unless it reaches a writer-capable server.",
+        "schema": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "AwaitDurable": {
+        "name": "X-Helix-Await-Durable",
+        "in": "header",
+        "required": false,
+        "description": "Flush the writer before acknowledging success. Valid only for write requests.",
+        "schema": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Invalid JSON, query plan, vector input, request option, or Helix Cloud authentication header.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/QueryError"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "The Helix Cloud API key is invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/QueryError"
+            }
+          }
+        }
+      },
+      "PaymentRequired": {
+        "description": "Helix Cloud query processing is disabled because the tenant has exhausted its credit.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/QueryError"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The Helix Cloud API key does not have permission to execute the query.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/QueryError"
+            }
+          }
+        }
+      },
+      "RequestTimeout": {
+        "description": "The Helix Cloud query exceeded its wall-clock limit.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/QueryError"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "The transaction conflicted with concurrent work and can be retried.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/QueryError"
+            }
+          }
+        }
+      },
+      "PayloadTooLarge": {
+        "description": "The Helix Cloud gateway rejected a request body larger than 2 MiB before query parsing.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/QueryError"
+            },
+            "example": {
+              "error": "payload_too_large",
+              "msg": "request body exceeds the maximum allowed size"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "The Helix Cloud gateway rate limit was exceeded, or the database rejected a request with `index_backpressure`: a write because a vector or text index already retains its maximum unpublished work, or a whole-index strong search whose answer lies behind more than 800 unpublished changes (eventual and prefiltered searches are never rejected this way), or a strong text search that would analyze more unpublished text in its partition than its bound allows (512 MiB of analysis by default), or a strong vector search that would score more unpublished vector work than its bound allows (by default the index's retained-byte limit, which writes reach first). Eventual searches are never rejected for unpublished text or vector work. Backpressure rejects the whole request (writes before commit) and is marked `retryable`.",
+        "headers": {
+          "Retry-After": {
+            "description": "Delay before retrying, when supplied by the gateway.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/QueryError"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "An internal query, storage, or serialization failure occurred.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/QueryError"
+            }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "A required writer or ready database is unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/QueryError"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "QueryRequest": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ReadQueryRequest"
+          },
+          {
+            "$ref": "#/components/schemas/WriteQueryRequest"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "request_type",
+          "mapping": {
+            "read": "#/components/schemas/ReadQueryRequest",
+            "write": "#/components/schemas/WriteQueryRequest"
+          }
+        }
+      },
+      "ReadQueryRequest": {
+        "type": "object",
+        "required": [
+          "request_type",
+          "query"
+        ],
+        "properties": {
+          "request_type": {
+            "const": "read"
+          },
+          "query_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional diagnostic name. It does not create a stored endpoint."
+          },
+          "query": {
+            "$ref": "#/components/schemas/ReadBatchQuery"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/QueryParameters"
+          },
+          "parameter_types": {
+            "$ref": "#/components/schemas/QueryParameterTypes"
+          },
+          "search_consistency": {
+            "type": "string",
+            "enum": [
+              "strong",
+              "eventual"
+            ],
+            "default": "strong",
+            "description": "Visibility of committed vector/text changes the index worker has not published yet. `strong` searches every committed change; `eventual` overlays a bounded budget of unpublished changes per search and may omit the rest until publication."
+          }
+        },
+        "dependentRequired": {
+          "parameter_types": [
+            "parameters"
+          ]
+        },
+        "additionalProperties": false
+      },
+      "WriteQueryRequest": {
+        "type": "object",
+        "required": [
+          "request_type",
+          "query"
+        ],
+        "properties": {
+          "request_type": {
+            "const": "write"
+          },
+          "query_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional diagnostic name. It does not create a stored endpoint."
+          },
+          "query": {
+            "$ref": "#/components/schemas/WriteBatchQuery"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/QueryParameters"
+          },
+          "parameter_types": {
+            "$ref": "#/components/schemas/QueryParameterTypes"
+          },
+          "search_consistency": {
+            "const": "strong",
+            "description": "Write batches always search strongly and see their own uncommitted changes."
+          }
+        },
+        "dependentRequired": {
+          "parameter_types": [
+            "parameters"
+          ]
+        },
+        "additionalProperties": false
+      },
+      "ReadBatchQuery": {
+        "type": "object",
+        "required": [
+          "read"
+        ],
+        "properties": {
+          "read": {
+            "$ref": "#/components/schemas/Batch"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WriteBatchQuery": {
+        "type": "object",
+        "required": [
+          "write"
+        ],
+        "properties": {
+          "write": {
+            "$ref": "#/components/schemas/Batch"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Batch": {
+        "type": "object",
+        "required": [
+          "entries"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchEntry"
+            }
+          },
+          "returns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          }
+        },
+        "additionalProperties": false
+      },
+      "BatchEntry": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "query"
+            ],
+            "properties": {
+              "query": {
+                "$ref": "#/components/schemas/NamedQuery"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "for_each"
+            ],
+            "properties": {
+              "for_each": {
+                "type": "object",
+                "required": [
+                  "param",
+                  "body"
+                ],
+                "properties": {
+                  "param": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "body": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/BatchEntry"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "NamedQuery": {
+        "type": "object",
+        "required": [
+          "root"
+        ],
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "root": {
+            "$ref": "#/components/schemas/OperationTree"
+          },
+          "condition": {
+            "$ref": "#/components/schemas/BatchCondition"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BatchCondition": {
+        "description": "Externally tagged condition for a conditional batch entry.",
+        "oneOf": [
+          {
+            "type": "string",
+            "const": "prev_not_empty"
+          },
+          {
+            "type": "object",
+            "required": [
+              "var_not_empty"
+            ],
+            "properties": {
+              "var_not_empty": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "var_empty"
+            ],
+            "properties": {
+              "var_empty": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "var_min_size"
+            ],
+            "properties": {
+              "var_min_size": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                ],
+                "minItems": 2,
+                "maxItems": 2
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "OperationTree": {
+        "type": "object",
+        "minProperties": 1,
+        "maxProperties": 1,
+        "description": "One externally tagged, snake_case HelixDB AstNode operation. Source operations start a traversal; subsequent operations contain their predecessor under input. Use a typed HelixDB SDK or the query documentation to construct this recursive tree.",
+        "additionalProperties": true,
+        "examples": [
+          {
+            "nodes": {
+              "reference": "all"
+            }
+          },
+          {
+            "count": {
+              "input": {
+                "nodes": {
+                  "reference": "all"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "QueryParameters": {
+        "type": "object",
+        "propertyNames": {
+          "minLength": 1
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/QueryParameterValue"
+        }
+      },
+      "QueryParameterValue": {
+        "description": "JSON-compatible runtime parameter. Datetimes are RFC 3339 strings when declared as date_time. Raw bytes cannot be represented on the JSON route. Integer and floating-point JSON numbers are accepted for f32 and f64 declarations and converted to the declared type. Values must be finite; f32 values must fit within its finite range.",
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "integer",
+            "format": "int64"
+          },
+          {
+            "type": "number",
+            "format": "double"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueryParameterValue"
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/QueryParameterValue"
+            }
+          }
+        ]
+      },
+      "QueryParameterTypes": {
+        "type": "object",
+        "description": "When present, keys must exactly match parameters. Typed and untyped parameters cannot be mixed. Floating-point declarations accept integer or floating-point JSON numbers and convert them to the declared f32 or f64 type.",
+        "propertyNames": {
+          "minLength": 1
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/QueryParameterType"
+        }
+      },
+      "QueryParameterType": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "bool",
+              "i64",
+              "f32",
+              "f64",
+              "string",
+              "date_time",
+              "value",
+              "object"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "array"
+            ],
+            "properties": {
+              "array": {
+                "$ref": "#/components/schemas/QueryParameterType"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "QueryResponse": {
+        "type": "object",
+        "description": "Returned variables keyed by the names listed in the batch returns array.",
+        "additionalProperties": true,
+        "example": {
+          "node_count": [
+            42
+          ]
+        }
+      },
+      "QueryError": {
+        "type": "object",
+        "description": "Stable error envelope returned by local servers and Helix Cloud gateways.",
+        "required": [
+          "error",
+          "msg"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Stable snake_case error code."
+          },
+          "msg": {
+            "type": "string",
+            "description": "Human-readable diagnostic message."
+          }
+        },
+        "additionalProperties": false,
+        "example": {
+          "error": "invalid_query_json",
+          "msg": "invalid query JSON: expected value"
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": [
+          "ready",
+          "mode",
+          "index_runtime",
+          "blocked_index_entity_count"
+        ],
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "description": "Configured database mode."
+          },
+          "index_runtime": {
+            "type": "string",
+            "description": "Stable index-runtime readiness code."
+          },
+          "blocked_index_entity_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Nodes and edges whose queued vector or text index work the index worker holds back: either it can never fit a publication under the current limits, typically after the limits were lowered, or applying it fails the same way every time, for example on damaged index data. Only the count: the writer logs an error naming each one when it is held back. Always 0 on a reader. Rebuilt after a restart as publication reaches them again."
+          }
+        },
+        "additionalProperties": false,
+        "example": {
+          "ready": true,
+          "mode": "writer",
+          "index_runtime": "ready",
+          "blocked_index_entity_count": 0
+        }
+      },
+      "DiagnosticsReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "uptime_secs",
+          "checks"
+        ],
+        "properties": {
+          "uptime_secs": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Seconds since the server opened its database."
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiagnosticCheck"
+            }
+          }
+        }
+      },
+      "DiagnosticCheck": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "category",
+          "status",
+          "summary",
+          "detail"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable check identifier.",
+            "enum": [
+              "storage.durability",
+              "storage.data_device",
+              "storage.s3_region",
+              "storage.s3_latency",
+              "cache.device",
+              "cache.space",
+              "cache.warm",
+              "resources.memory",
+              "indexes.publication",
+              "queries.missing_indexes",
+              "queries.unbounded_scans"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "storage",
+              "cache",
+              "resources",
+              "indexes",
+              "queries"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "warn",
+              "fail",
+              "skip"
+            ],
+            "description": "`warn`: works but costs performance or money. `fail`: risks losing data. `skip`: the check could not run; `detail` says why."
+          },
+          "summary": {
+            "type": "string",
+            "description": "One-line verdict."
+          },
+          "detail": {
+            "type": "string",
+            "description": "What was observed, or why the check was skipped. May span several lines."
+          },
+          "fix": {
+            "type": "string",
+            "description": "What to change; present only for `warn` and `fail`. May contain `<instance>`, which a client that knows the instance's name substitutes."
+          }
+        }
+      },
+      "CypherInteger": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "$type",
+          "value"
+        ],
+        "properties": {
+          "$type": {
+            "const": "integer"
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^[+-]?[0-9]+$",
+            "description": "Signed 64-bit decimal integer. Use this envelope outside the JavaScript safe integer range to avoid precision loss."
+          }
+        }
+      },
+      "CypherFloat": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "$type",
+          "value"
+        ],
+        "properties": {
+          "$type": {
+            "const": "float"
+          },
+          "value": {
+            "type": "string",
+            "enum": [
+              "NaN",
+              "Infinity",
+              "-Infinity"
+            ]
+          }
+        }
+      },
+      "CypherParameterMap": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "$type",
+          "value"
+        ],
+        "properties": {
+          "$type": {
+            "const": "map"
+          },
+          "value": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CypherParameterValue"
+            }
+          }
+        }
+      },
+      "CypherParameterValue": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "number",
+            "description": "Finite JSON number. Signed integers outside ±9007199254740991 should use the integer envelope. Fractional or exponent-form values retain floating-point semantics."
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CypherParameterValue"
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CypherParameterValue"
+            },
+            "not": {
+              "required": [
+                "$type"
+              ],
+              "properties": {
+                "$type": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/CypherInteger"
+          },
+          {
+            "$ref": "#/components/schemas/CypherFloat"
+          },
+          {
+            "$ref": "#/components/schemas/CypherParameterMap"
+          }
+        ],
+        "description": "Scalar, list, or map parameter. Graph elements cannot be supplied as parameters. Escape a map whose $type is a string with the map envelope. Integer input must fit signed 64-bit range."
+      },
+      "CypherMap": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "$type",
+          "value"
+        ],
+        "properties": {
+          "$type": {
+            "const": "map"
+          },
+          "value": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CypherValue"
+            }
+          }
+        }
+      },
+      "CypherValue": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "number",
+            "description": "Finite JSON number. Signed integers outside ±9007199254740991 should use the integer envelope. Fractional or exponent-form values retain floating-point semantics."
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CypherValue"
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CypherValue"
+            },
+            "propertyNames": {
+              "not": {
+                "const": "$type"
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/CypherInteger"
+          },
+          {
+            "$ref": "#/components/schemas/CypherFloat"
+          },
+          {
+            "$ref": "#/components/schemas/CypherMap"
+          },
+          {
+            "$ref": "#/components/schemas/CypherNode"
+          },
+          {
+            "$ref": "#/components/schemas/CypherRelationship"
+          },
+          {
+            "$ref": "#/components/schemas/CypherPath"
+          }
+        ],
+        "description": "Lossless recursive result value. Escape literal maps containing $type with the map envelope. Graph IDs are unsigned decimal strings; id() instead uses checked signed conversion."
+      },
+      "CypherId": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]{0,19})$",
+        "maxLength": 20,
+        "description": "Unsigned 64-bit graph identifier, 0 through 18446744073709551615, encoded as a decimal string. Never convert implicitly to a JavaScript number."
+      },
+      "CypherNode": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "$type",
+          "id",
+          "labels",
+          "properties"
+        ],
+        "properties": {
+          "$type": {
+            "const": "node"
+          },
+          "id": {
+            "$ref": "#/components/schemas/CypherId"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CypherValue"
+            },
+            "description": "User properties only; internal Helix metadata is omitted."
+          }
+        }
+      },
+      "CypherRelationship": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "$type",
+          "id",
+          "start",
+          "end",
+          "type",
+          "properties"
+        ],
+        "properties": {
+          "$type": {
+            "const": "relationship"
+          },
+          "id": {
+            "$ref": "#/components/schemas/CypherId"
+          },
+          "start": {
+            "$ref": "#/components/schemas/CypherId"
+          },
+          "end": {
+            "$ref": "#/components/schemas/CypherId"
+          },
+          "type": {
+            "type": "string",
+            "description": "Stored relationship type."
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CypherValue"
+            }
+          }
+        }
+      },
+      "CypherPath": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "$type",
+          "nodes",
+          "relationships"
+        ],
+        "properties": {
+          "$type": {
+            "const": "path"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CypherNode"
+            },
+            "minItems": 1
+          },
+          "relationships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CypherRelationship"
+            }
+          }
+        },
+        "description": "Ordered walk with exactly one more node than relationship. Relationship endpoints retain their stored direction, including when traversed backwards."
+      },
+      "CypherRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "One statement in the supported Cypher profile; empty or unsupported statements return a classified query error."
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CypherParameterValue"
+            },
+            "default": {}
+          },
+          "query_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional caller-supplied query name."
+          }
+        }
+      },
+      "CypherResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "columns",
+          "rows"
+        ],
+        "properties": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/CypherValue"
+              }
+            }
+          }
+        },
+        "description": "Column order defines each row. Every row has exactly columns.length cells. Duplicates are preserved unless the query removes them. Row order is guaranteed only by ORDER BY. A successful statement without RETURN has empty columns and rows. Planner diagnostics are returned separately by the explain operation."
+      },
+      "CypherErrorDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "detail",
+          "phase",
+          "span"
+        ],
+        "properties": {
+          "detail": {
+            "type": "string",
+            "description": "The specific condition within the category, in lower snake case, such as `undefined_variable` or `memory_limit`.",
+            "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$",
+            "examples": [
+              "undefined_variable",
+              "memory_limit"
+            ]
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "compile",
+              "runtime"
+            ]
+          },
+          "span": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "start",
+                  "end"
+                ],
+                "properties": {
+                  "start": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "end": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            ],
+            "description": "Optional half-open source span [start,end), measured in UTF-8 bytes; null when unavailable."
+          }
+        }
+      },
+      "CypherError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error",
+          "msg"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Machine-readable lower snake case code: a Cypher category, such as `syntax_error` or `resource_limit`, or a native transport or storage error code.",
+            "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$",
+            "examples": [
+              "syntax_error",
+              "resource_limit",
+              "transaction_conflict"
+            ]
+          },
+          "msg": {
+            "type": "string"
+          },
+          "details": {
+            "$ref": "#/components/schemas/CypherErrorDetails"
+          },
+          "retryable": {
+            "const": false,
+            "description": "Present for a native uncertain commit outcome. Do not retry the modifying statement automatically."
+          }
+        },
+        "description": "Query errors include details. Request, storage, and transaction errors retain the native envelope without details. An uncertain commit returns retryable:false; other missing retryable values are not permission to retry."
+      },
+      "CypherExplainedOperator": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "position",
+          "logical",
+          "contract",
+          "graph",
+          "batch_consumer",
+          "blocking"
+        ],
+        "properties": {
+          "position": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "logical": {
+            "type": "object",
+            "description": "Resolved frontend-independent logical operator; detailed planner representation may evolve."
+          },
+          "contract": {
+            "type": "object",
+            "description": "Derived input/output slots, effects, references, correlation, multiplicity, and optimization boundaries."
+          },
+          "graph": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Selected access steps and sources, estimated_rows_per_input, and cartesian_products for MATCH; null for other operators."
+          },
+          "batch_consumer": {
+            "type": [
+              "string",
+              "object",
+              "null"
+            ],
+            "description": "Selected downstream batch consumer, or null when the selected plan materializes the relation."
+          },
+          "blocking": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "aggregation",
+                "distinct",
+                "ordering",
+                "hash_build",
+                "materialized_relation",
+                "input_before_mutation"
+              ]
+            }
+          }
+        }
+      },
+      "CypherExplanation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "effect",
+          "bindings",
+          "returns",
+          "operators",
+          "planner",
+          "notices"
+        ],
+        "properties": {
+          "effect": {
+            "type": "string",
+            "enum": [
+              "Read",
+              "Write"
+            ]
+          },
+          "bindings": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "returns": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "operators": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CypherExplainedOperator"
+            }
+          },
+          "planner": {
+            "type": "object",
+            "description": "Selected costs, cardinality/cost estimates, memo/rule work, and guardrail exhaustion. Estimates do not limit results."
+          },
+          "notices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "optimizer_budget_exhausted",
+                    "cartesian_product",
+                    "cursor_dependent_batching",
+                    "buffered_response"
+                  ]
+                },
+                "operator": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        "description": "Read-only planning response. Explaining a modifying statement does not execute it. Planner internals may evolve independently of the stable columns/rows execution response."
+      }
+    }
+  }
+}

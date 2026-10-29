@@ -1,0 +1,159 @@
+---
+title: "Get started"
+description: "Initialize HelixDB, start a local instance, run the generated query, and stop it"
+sidebarTitle: "Get started"
+icon: "rocket"
+pageType: "Tutorial"
+---
+
+<div className="flex flex-wrap gap-2"><Badge color="green" size="sm">Tutorial</Badge></div>
+
+This is the canonical local HelixDB quickstart. You will create a project, start
+the generated `dev` instance, run the generated JSON request, and stop the
+instance.
+
+## Prerequisites
+
+- Docker, or Podman configured as described below
+- A terminal on macOS or Linux, or PowerShell on Windows
+
+<Steps>
+  <Step title="Install the CLI">
+
+macOS and Linux:
+
+```bash
+curl -sSL "https://install.helix-db.com" | bash
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/HelixDB/helix-db/main/crates/cli/install.ps1 | iex
+```
+
+If the CLI is already installed, run [`helix update`](/cli/command-reference/update).
+
+  </Step>
+  <Step title="Create a local project">
+
+Create and enter an empty directory, then initialize it:
+
+```bash
+mkdir my-helix-app
+cd my-helix-app
+helix init local
+```
+
+`helix init local` creates:
+
+- `helix.toml` with one local instance named `dev` on port `6969`.
+- `.helix/` for CLI-managed instance state.
+- `.gitignore` entries for `.helix/`, `.env`, `target/`, and `*.log`.
+- `AGENTS.md` with the current CLI workflow for coding agents.
+- `examples/request.json` with a runnable read request.
+
+It does not create a Rust, TypeScript, Go, or Python project. Choose an SDK
+after this CLI journey.
+
+If you use Podman, set `container_runtime = "podman"` under `[project]` in
+`helix.toml` before you start the generated instance. New projects otherwise
+default to Docker.
+
+  </Step>
+  <Step title="Start the generated instance">
+
+```bash
+helix start dev
+```
+
+The CLI starts the local container, publishes it at `http://localhost:6969`,
+and waits for the database health check before it returns.
+
+<Warning>
+The default storage mode is in-memory. Stopping the instance removes its data.
+Use `helix start dev --disk` when you need local persistence.
+</Warning>
+
+  </Step>
+  <Step title="Run the generated query">
+
+```bash
+helix query dev --file examples/request.json
+```
+
+The generated request counts nodes with the `User` label. A new database
+returns a `node_count` of zero. Edit the JSON file and run the same command
+again to iterate.
+
+  </Step>
+  <Step title="Stop the instance">
+
+```bash
+helix stop dev
+```
+
+`helix stop` is idempotent, so it also exits successfully when the instance is
+already stopped.
+
+  </Step>
+</Steps>
+
+## Use an SDK
+
+The SDKs build the same JSON operation tree that `helix query` sends to
+`POST /v2/query`. Initialize a normal language project and install one released
+SDK:
+
+{/* package-install: no JSON representation */}
+<CodeGroup>
+```bash Rust
+cargo add helix-db@3.0.0 tokio serde_json
+```
+
+```bash TypeScript
+npm install @helix-db/helix-db@3.1.0
+```
+
+```bash Go
+go get github.com/helixdb/helix-db/sdks/go@v0.3.1
+```
+
+```bash Python
+python -m pip install helix-db==0.3.4
+```
+</CodeGroup>
+
+Continue with the full setup guide for your language:
+
+<CardGroup cols={2}>
+  <Card title="Rust SDK" icon="code" href="/database/helix-db/start-here/sdk-setup/rust-project-setup">
+    Build and execute typed Rust queries.
+  </Card>
+  <Card title="TypeScript SDK" icon="code" href="/database/helix-db/start-here/sdk-setup/typescript-project-setup">
+    Build and execute TypeScript queries.
+  </Card>
+  <Card title="Go SDK" icon="code" href="/database/helix-db/start-here/sdk-setup/go-project-setup">
+    Build and execute Go queries.
+  </Card>
+  <Card title="Python SDK" icon="code" href="/database/helix-db/start-here/sdk-setup/python-project-setup">
+    Build and execute synchronous or asynchronous Python queries.
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Query walkthrough" icon="route" href="/database/helix-db/core-concepts/overview">
+    Learn how SDK builders become the JSON request sent to HelixDB.
+  </Card>
+  <Card title="Data model" icon="diagram-project" href="/database/helix-db/core-concepts/data-model">
+    Learn how nodes, edges, labels, and properties fit together.
+  </Card>
+  <Card title="Writing data" icon="pen" href="/database/helix-db/query-guides/writing-data">
+    Add, update, and remove graph data.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/cli/command-reference">
+    See every current CLI command and option.
+  </Card>
+</CardGroup>

@@ -1,0 +1,46 @@
+---
+title: "CLI troubleshooting"
+description: "Recover local and WorkOS-authenticated Cloud CLI operations"
+pageType: "Troubleshooting"
+---
+
+<div className="flex flex-wrap gap-2"><Badge color="orange" size="sm">Troubleshooting</Badge></div>
+
+## Authentication required
+
+Run `helix auth login`. The CLI refreshes a nearly expired session automatically
+through the Helix Cloud API. It retries once only when the API rejects the expired
+token before running the command; a normal authorization denial or any failure after
+the command runs is not retried.
+
+Old credential/config fields are intentionally rejected. Remove legacy user/admin keys, arbitrary
+authorization headers, gateway URLs, and query-key fields. Service credentials and application keys
+cannot be used to log the CLI in.
+
+## Ambiguous Cloud target
+
+Without a terminal, or with `--json`, the CLI cannot prompt, so it fails and lists the candidates.
+Pass one by ID, slug, or name, for example `--workspace <workspace>`, `--project <project>`, or a
+database as `tenant:<id>`. If a name matches several resources, use the ID or slug instead.
+Alternatively run `helix project link` and `helix add cloud` to persist stable project/database
+linkage in `helix.toml`.
+
+## Confirmation required
+
+Destructive Cloud commands fail with `this action needs confirmation` when they cannot prompt. Re-run
+with `--yes` after checking the target.
+
+## Query permission denied
+
+Project `read`/`write` does not grant database-data access. Ask an owner/admin to grant independent
+`query_read` and, if required, `query_write` for the selected project. Members default to neither.
+
+## Local connection refused
+
+Run `helix start <instance>`, verify with `helix status <instance>`, or pass local-only `--host` and
+`--port` overrides.
+
+## Cloud logs
+
+Cloud `--follow` is not supported. Use an RFC 3339 `--start`/`--end` range or omit both for the last
+hour of query errors.

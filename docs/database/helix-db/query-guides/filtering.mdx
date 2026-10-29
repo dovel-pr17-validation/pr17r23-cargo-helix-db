@@ -1,0 +1,147 @@
+---
+title: "Filtering"
+description: "Narrow traversal streams with predicates and exact search candidate sets"
+sidebarTitle: "Filtering"
+pageType: "Guide"
+---
+
+<div className="flex flex-wrap gap-2"><Badge color="blue" size="sm">Guide</Badge></div>
+
+HelixDB filters in two places:
+
+- A **source predicate** such as `nWhere` / `n_where` selects the initial candidates.
+  It is eligible for index push-down, so filter here whenever you can.
+- **`.where(...)`** filters the current stream at any later point in a traversal, for
+  example after following an edge.
+
+Both accept the same predicates. To restrict vector or full-text search to a
+candidate set, see [Filter search candidates](#filter-search-candidates).
+
+## Common predicates
+
+| Intent | Builder |
+| --- | --- |
+| Equality | `eq(property, value)` |
+| Comparison | `gt`, `gte`, `lt`, `lte` |
+| Inclusive range | `between` |
+| Set membership | `isIn` / `is_in` |
+| Property exists | `hasKey` / `has_key` |
+| Prefix | `startsWith` / `starts_with` |
+| Boolean composition | `and`, `or`, `not` |
+
+Values can be literals or typed parameter expressions.
+
+## Filter a stream
+
+<CodeGroup>
+
+```rust Rust
+g()
+    .n_with_label("User")
+    .where_(Predicate::gte("score", 100))
+    .value_map(Some(vec!["$id", "name", "score"]))
+```
+
+```ts TypeScript
+import { Predicate, g } from "@helix-db/helix-db";
+
+g()
+  .nWithLabel("User")
+  .where(Predicate.gte("score", 100))
+  .valueMap(["$id", "name", "score"])
+```
+
+```go Go
+helix.G().
+	NWithLabel("User").
+	Where(helix.PredGte("score", int64(100))).
+	ValueMap("$id", "name", "score")
+```
+
+```python Python
+(
+    g()
+    .n_with_label("User")
+    .where(Predicate.gte("score", 100))
+    .value_map(["$id", "name", "score"])
+)
+```
+
+```json JSON
+{
+  "request_type": "read",
+  "query_name": "ranked_users",
+  "query": {
+    "read": {
+      "entries": [{
+        "query": {
+          "name": "users",
+          "root": {
+            "value_map": {
+              "input": {
+                "where": {
+                  "input": {
+                    "nodes_where": {
+                      "predicate": {
+                        "eq": {
+                          "left": { "property": "$label" },
+                          "right": { "constant": { "string": "User" } }
+                        }
+                      }
+                    }
+                  },
+                  "predicate": {
+                    "gte": {
+                      "left": { "property": "score" },
+                      "right": { "constant": { "i64": 100 } }
+                    }
+                  }
+                }
+              },
+              "properties": ["$id", "name", "score"]
+            }
+          }
+        }
+      }],
+      "returns": ["users"]
+    }
+  }
+}
+```
+
+```cypher Cypher
+MATCH (u:User)
+WHERE u.score >= 100
+RETURN id(u) AS id, u.name AS name, u.score AS score
+```
+
+</CodeGroup>
+
+## Filter search candidates
+
+To restrict vector or full-text search to a candidate set, build the traversal that
+decides membership and search within it. Do not filter search results afterward with
+`.where(...)`: excluded high-ranking hits still consume the top `k`. See
+[Prefiltered search](/database/helix-db/query-guides/prefiltering).
+
+### Vector prefiltering
+
+See [Vector prefiltering](/database/helix-db/query-guides/prefiltering#vector-prefiltering).
+
+### Full-text search prefiltering
+
+See [Full-text search prefiltering](/database/helix-db/query-guides/prefiltering#full-text-search-prefiltering).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Typed parameters" icon="sliders" href="/database/helix-db/query-guides/parameters">
+    Move request-specific filter values out of the AST.
+  </Card>
+  <Card title="Secondary indexes" icon="gauge-high" href="/database/helix-db/query-guides/secondary-indexes">
+    Back equality and range predicates with an index.
+  </Card>
+  <Card title="Prefiltered search" icon="filter" href="/database/helix-db/query-guides/prefiltering">
+    Rank only the records a traversal reaches.
+  </Card>
+</CardGroup>

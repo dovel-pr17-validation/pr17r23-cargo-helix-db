@@ -1,0 +1,41 @@
+---
+title: "CLI configuration"
+description: "Project linkage and WorkOS session files"
+pageType: "Reference"
+---
+
+<div className="flex flex-wrap gap-2"><Badge color="gray" size="sm">Reference</Badge></div>
+
+The CLI reads project configuration from `helix.toml` and its WorkOS session from
+`~/.helix/credentials`. There is no user-global workspace selection file.
+
+```toml
+[project]
+name = "example"
+queries = "db"
+container_runtime = "docker"
+id = "project_123"          # stable optional Cloud link
+workspace_id = "ws_123"     # stable optional Cloud link
+
+[local.dev]
+port = 6969
+
+[enterprise.production]
+database = "tenant:tenant_123"
+project_id = "project_123"  # optional stable link
+workspace_id = "ws_123"     # optional stable link
+```
+
+Cloud `database` accepts only `tenant:<id>` or `cluster:<id>`. A physical shared cluster is not a
+database target. Unknown Cloud fields are rejected. In particular, gateway URLs, query auth headers,
+query auth environment variables, source snapshots, sync metadata, and query bundles are invalid.
+
+`helix init cloud`, `helix add cloud`, and `helix project link` write `[project] id` and
+`workspace_id`. Cloud commands run in the project then default to that project and its linked
+databases. An explicit argument (ID, slug, or name) always wins; without a link, a command uses the
+only candidate, prompts in a terminal, or fails and lists the candidates. See
+[Cloud resource resolution](/cli/command-reference#cloud-resource-resolution).
+
+The strict credential file stores only `access_token`, rotating `refresh_token`, `expires_at`, and
+`email`. It is written atomically with mode `0600`. Do not edit it or put application keys or service
+credentials in it.
